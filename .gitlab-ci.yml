@@ -1,0 +1,33 @@
+stages:
+  - install
+  - test
+  - lint
+
+# Установка зависимостей
+install_dependencies:
+  stage: install
+  script:
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+  artifacts:
+    paths:
+      - venv/
+
+# Запуск тестов
+run_tests:
+  stage: test
+  script:
+    - source venv/bin/activate
+    - pytest tests/test_lab1.py --maxfail=1 --disable-warnings -q
+  artifacts:
+    paths:
+      - reports/
+
+# Проверка качества кода
+lint_code:
+  stage: lint
+  script:
+    - pip install flake8
+    - flake8 .  # Проверка качества кода
