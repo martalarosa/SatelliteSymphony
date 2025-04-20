@@ -1,0 +1,12 @@
+image: python:3.9
+
+stages:
+  - test
+
+before_script:
+  - pip install numpy matplotlib pytest
+
+test:
+  stage: test
+  script:
+    - pytest -v test_lab1.py

@@ -1,0 +1,25 @@
+name: CI орбитального ПМО
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔄 Клонируем репозиторий
+        uses: actions/checkout@v3
+
+      - name: 🐍 Устанавливаем Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: 📦 Установка зависимостей
+        run: |
+          pip install --upgrade pip
+          pip install numpy matplotlib pytest
+
+      - name: 🧪 Запуск тестов
+        run: pytest -v test_lab1.py
