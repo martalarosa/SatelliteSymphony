@@ -1,9 +1,11 @@
-﻿""" данный код реализует программно-математическое обеспечение (ПМО) для анализа траекторий навигационных искусственных спутников земли (НИСЗ). 
+""" данный код реализует программно-математическое обеспечение (ПМО) для анализа траекторий навигационных искусственных спутников земли (НИСЗ). 
 поддерживаются реальные данные из файлов RINEX 3.02 и SP3, а также режим имитации с периодической моделью орбиты спутника.
 интерфейс (tkinter) позволяет выбрать режим, загрузить данные (либо сгенерировать орбиту), 
 выбрать спутниковую систему, номер спутника и временной интервал. поддерживаются навигационные созвездия GPS, ГЛОНАСС, Galileo и BDS. 
 в виде графиков отображаются эволюция координат и скоростей. реализовано покрытие  юнит- и интеграционными тестами, 
-настроен pipeline для github actions и gitlab ci с автоматическим запуском тестов при каждом обновлении проекта. """
+настроен pipeline для github actions и gitlab ci с автоматическим запуском тестов при каждом обновлении проекта. 
+в архитектуре кода используется паттерн "Адаптер" 
+для унификации интерфейсов различных источников данных (RINEX, SP3, имитация) под общее API траекторного анализа. """
 
 import math
 import re
@@ -13,9 +15,17 @@ from datetime import datetime, timedelta
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D 
+from abc import ABC, abstractmethod
 
 EARTH_GRAVITY = 3.986005e14       # гравитационный параметр Земли (м^3/с^2)
 EARTH_ROTATION_RATE = 7.2921151467e-5  # угловая скорость вращения Земли (рад/с)
+
+# интерфейс адаптера данных (Adapter pattern)
+class IEphemerisAdapter(ABC):
+    @abstractmethod
+    def get_data_points(self):
+        """Возвращает список словарей {'sat':..., 'time':..., 'coords': [...]}"""
+        pass
 
 # имитационный режим
 class OrbitSimulator:
@@ -35,12 +45,21 @@ class OrbitSimulator:
             coords_list.append({'sat': 'SIM', 'time': times[i], 'coords': [x, y, z]})
         return coords_list
 
+# адаптер для OrbitSimulator
+class OrbitAdapter(IEphemerisAdapter):
+    def __init__(self, count=500):
+        self.simulator = OrbitSimulator()
+        self.count = count
+
+    def get_data_points(self):
+        return self.simulator.generate(count=self.count)
+
+ # класс для парсинга навигационного RINEX файла версии 3.02 и расчёта координат спутника
 class RinexParser:
-    # класс для парсинга навигационного RINEX файла версии 3.02
     def __init__(self, filename):
         self.filename = filename
         # будем хранить результаты парсинга эфемерид
-        self.ephemerides = {}  # словарь: ключ - sat, значение - список параметров 
+        self.ephemerides = {}  # словарь: ключ - спутник, значение - список параметров 
 
     def parse(self):
         data_points = []  # итоговый список точек, будет заполнен координатами после расчёта
@@ -223,8 +242,16 @@ class RinexParser:
             # возвращаем координаты в километрах для удобства отображения
             return [X/1000.0, Y/1000.0, Z/1000.0]
 
+# адаптер для RinexParser
+class RinexAdapter(IEphemerisAdapter):
+    def __init__(self, filename):
+        self.parser = RinexParser(filename)
+
+    def get_data_points(self):
+        return self.parser.parse()
+
+# класс для парсинга SP3 файлов
 class SP3Parser:
-    # класс для парсинга SP3 файлов
     def __init__(self, filename):
         self.filename = filename
 
@@ -276,8 +303,16 @@ class SP3Parser:
                 data_points.append({'sat': sat, 'time': current_time, 'coords': [X, Y, Z]})
         return data_points
 
+# адаптер для SP3Parser
+class SP3Adapter(IEphemerisAdapter):
+    def __init__(self, filename):
+        self.parser = SP3Parser(filename)
+
+    def get_data_points(self):
+        return self.parser.parse()
+
+# класс для фильтрации данных и построения графиков координат и скоростей
 class EphemerisPlot:
-    # класс для фильтрации данных и построения графиков координат и скоростей
     def __init__(self, data):
         self.data = data  # полный список словарей {'sat':..., 'time':..., 'coords':[...]}
     
@@ -332,8 +367,8 @@ class EphemerisPlot:
         plt.tight_layout()
         plt.show()
 
+# главный класс приложения
 class GNSSApp:
-   # главный класс приложения
     def __init__(self):
         self.window = tk.Tk()
         self.window.title("Анализ траекторий НИСЗ")
@@ -345,8 +380,9 @@ class GNSSApp:
         tk.Button(self.window, text="Реальные данные", command=self.load_real_data).pack(pady=5)
 
     def run_simulation(self):
-        sim_data = OrbitSimulator().generate(count=360)  # 6 часов с шагом 1 мин (360 точек)
-        plotter = EphemerisPlot(sim_data)
+        adapter = OrbitAdapter(count=360) # 6 часов с шагом 1 мин (360 точек)
+        data = adapter.get_data_points()
+        plotter = EphemerisPlot(data)
         plotter.filter_and_plot('SIM')
 
     def load_real_data(self):
@@ -364,10 +400,10 @@ class GNSSApp:
         # выбираем соответствующий парсер
         try:
             if file_type == 'rinex':
-                parser = RinexParser(file_path)
+                adapter = RinexAdapter(file_path)
             else:
-                parser = SP3Parser(file_path)
-            data_points = parser.parse()
+                adapter = SP3Adapter(file_path)
+            data_points = adapter.get_data_points()
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось прочитать файл: {e}")
             return
